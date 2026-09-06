@@ -92,9 +92,20 @@ function createServer() {
   /* ---------- rate limiting ---------- */
 
   const buckets = new Map();
+  let lastBucketPrune = 0;
 
   function take(ip, key, limit) {
     const now = Date.now();
+
+    // Prune stale buckets once per window so a flood of unique IPs (IPv6
+    // rotation, NAT churn) can't grow the map without bound.
+    if (now - lastBucketPrune > RATE_WINDOW_MS) {
+      lastBucketPrune = now;
+      for (const [k, b] of buckets) {
+        if (now - b.start > RATE_WINDOW_MS) buckets.delete(k);
+      }
+    }
+
     const b = buckets.get(key) || { count: 0, start: now };
     if (now - b.start > RATE_WINDOW_MS) {
       b.count = 0;
@@ -254,7 +265,15 @@ function createServer() {
 
   /* ---------- router ---------- */
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => {
+    handleRequest(req, res).catch((err) => {
+      console.error(`[err] ${req.method} ${req.url}:`, err);
+      if (res.headersSent) return res.destroy();
+      sendJson(res, 500, { error: 'internal_error' });
+    });
+  });
+
+  async function handleRequest(req, res) {
     const started = Date.now();
     const originalEnd = res.end.bind(res);
     let logged = false;
@@ -346,7 +365,7 @@ function createServer() {
     }
 
     sendJson(res, 404, { error: 'not_found' });
-  });
+  }
 
   return { server, registry, alertStore };
 }
