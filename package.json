@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test:mock": "node test/mock-device.js"
+    "test:mock": "node test/mock-device.js",
+    "test": "node --test test/registry.test.js test/alerts.test.js test/api.test.js test/limits.test.js"
   },
   "engines": {
     "node": ">=18"
