@@ -1,6 +1,6 @@
 {
   "name": "iot-signaling-server",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "IoT Modular System - signaling/registry server. Only connects clients and devices; stores no sensor data.",
   "main": "src/index.js",
   "scripts": {

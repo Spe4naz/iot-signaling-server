@@ -16,6 +16,7 @@ const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000;
 const RATE_REGISTER = Number(process.env.RATE_LIMIT_REGISTER) || 20;   // /min
 const RATE_HEARTBEAT = Number(process.env.RATE_LIMIT_HEARTBEAT) || 120; // /min
 const RATE_WRITE = Number(process.env.RATE_LIMIT_WRITE) || 60;          // /min
+const RATE_READ = Number(process.env.RATE_LIMIT_READ) || 120;           // /min
 
 // Anti-spam: max devices from a single origin IP
 const MAX_DEVICES_PER_IP = Number(process.env.MAX_DEVICES_PER_IP) || 20;
@@ -164,9 +165,10 @@ function createServer() {
     const { params } = parseUrl(req);
     let id = params.get('id') || req.headers['x-device-id'] || null;
 
+    let body = null;
     if (!id) {
       try {
-        const body = await readBody(req);
+        body = await readBody(req);
         id = (body && body.id) || null;
       } catch (e) {
         /* invalid json body — ignore */
@@ -175,12 +177,24 @@ function createServer() {
 
     if (!id) return sendJson(res, 400, { error: 'missing_id' });
 
-    const device = registry.heartbeat(id);
+    if (!body) {
+      try {
+        body = await readBody(req);
+      } catch (e) {
+        body = null;
+      }
+    }
+
+    const device = registry.heartbeat(id, body);
     if (!device) return sendJson(res, 404, { ok: false, error: 'not_registered' });
     sendJson(res, 200, { ok: true, device });
   }
 
   function handleList(req, res) {
+    if (!authOk(req)) return sendJson(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'list:' + clientIp(req), RATE_READ)) {
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
     const { params } = parseUrl(req);
     const online = params.get('online');
     const filter = {};
@@ -190,6 +204,10 @@ function createServer() {
   }
 
   function handleGet(req, res, id) {
+    if (!authOk(req)) return sendJson(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'read:' + clientIp(req), RATE_READ)) {
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
     const device = registry.get(id);
     if (!device) return sendJson(res, 404, { error: 'not_found' });
     sendJson(res, 200, device);
@@ -312,7 +330,7 @@ function createServer() {
       return sendJson(res, 200, {
         version: VERSION,
         stale_ms: Number(process.env.STALE_MS) || 180_000,
-        rate_limits: { window_ms: RATE_WINDOW_MS, register: RATE_REGISTER, heartbeat: RATE_HEARTBEAT, write: RATE_WRITE },
+        rate_limits: { window_ms: RATE_WINDOW_MS, register: RATE_REGISTER, heartbeat: RATE_HEARTBEAT, write: RATE_WRITE, read: RATE_READ },
         auth_enabled: Boolean(REGISTER_TOKEN),
         max_devices_per_ip: MAX_DEVICES_PER_IP,
       });

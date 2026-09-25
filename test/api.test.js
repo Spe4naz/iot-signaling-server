@@ -126,15 +126,20 @@ test('register exceeds max devices per ip with 429', async () => {
   assert.equal(r3.status, 429);
 });
 
-test('list and get device', async () => {
-  const list = await req('GET', '/api/v1/devices');
+test('list and get device require token', async () => {
+  const noTokenList = await req('GET', '/api/v1/devices');
+  assert.equal(noTokenList.status, 401);
+  const noTokenGet = await req('GET', '/api/v1/devices/api_dev1');
+  assert.equal(noTokenGet.status, 401);
+
+  const list = await req('GET', '/api/v1/devices', { token: TOKEN });
   assert.equal(list.status, 200);
   assert.ok(Array.isArray(list.json));
   assert.ok(list.json.some((d) => d.id === 'api_dev1'));
-  const one = await req('GET', '/api/v1/devices/api_dev1');
+  const one = await req('GET', '/api/v1/devices/api_dev1', { token: TOKEN });
   assert.equal(one.status, 200);
   assert.equal(one.json.id, 'api_dev1');
-  const missing = await req('GET', '/api/v1/devices/nope');
+  const missing = await req('GET', '/api/v1/devices/nope', { token: TOKEN });
   assert.equal(missing.status, 404);
 });
 

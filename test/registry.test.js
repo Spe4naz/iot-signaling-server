@@ -72,6 +72,22 @@ test('heartbeat updates status, unknown returns null', () => {
   assert.equal(r.get('hb').offlineAt, null);
 });
 
+test('register and heartbeat carry firmwareVersion', () => {
+  const r = makeRegistry();
+  const d = r.register({ id: 'fw', ip: '1.2.3.5', firmwareVersion: '1.2.2' });
+  assert.equal(d.firmwareVersion, '1.2.2');
+  r.heartbeat('fw', { firmwareVersion: '1.2.3' });
+  assert.equal(r.get('fw').firmwareVersion, '1.2.3');
+  r.heartbeat('fw', { firmwareVersion: '   ' });
+  assert.equal(r.get('fw').firmwareVersion, '1.2.3');
+});
+
+test('register truncates firmwareVersion to 32 chars', () => {
+  const r = makeRegistry();
+  const d = r.register({ id: 'fw2', ip: '1.2.3.6', firmwareVersion: 'x'.repeat(50) });
+  assert.equal(d.firmwareVersion.length, 32);
+});
+
 test('cleanup marks stale devices offline but keeps them', () => {
   const r = makeRegistry();
   r.register({ id: 'a', ip: '1.1.1.1' });

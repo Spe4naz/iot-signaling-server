@@ -82,6 +82,10 @@ class DeviceRegistry {
         ? [...new Set(data.sensors.map((s) => String(s).slice(0, 64)))].slice(0, MAX_SENSORS)
         : [],
       mqttBroker: data.mqttBroker ? String(data.mqttBroker).slice(0, 128) : null,
+      firmwareVersion:
+        data.firmwareVersion && typeof data.firmwareVersion === 'string'
+          ? data.firmwareVersion.slice(0, 32)
+          : (existing && existing.firmwareVersion) || null,
       offlineAt: existing && existing.status === 'online' ? existing.offlineAt : null,
       firstSeen: existing ? existing.firstSeen : now,
       lastSeen: now,
@@ -92,12 +96,19 @@ class DeviceRegistry {
     return device;
   }
 
-  heartbeat(id) {
+  heartbeat(id, data) {
     const device = this.devices.get(String(id));
     if (!device) return null;
     device.lastSeen = Date.now();
     device.status = 'online';
     device.offlineAt = null;
+    if (
+      data &&
+      typeof data.firmwareVersion === 'string' &&
+      data.firmwareVersion.trim().length > 0
+    ) {
+      device.firmwareVersion = data.firmwareVersion.trim().slice(0, 32);
+    }
     this._markDirty();
     return device;
   }
