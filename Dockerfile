@@ -10,6 +10,7 @@ ENV NODE_ENV=production
 
 COPY package.json ./
 COPY src ./src
+COPY web/dist ./web/dist
 
 RUN mkdir -p /app/data
 

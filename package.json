@@ -1,13 +1,14 @@
 {
   "name": "iot-signaling-server",
-  "version": "0.3.1",
-  "description": "IoT Modular System - signaling/registry server. Only connects clients and devices; stores no sensor data.",
+  "version": "0.4.0",
+  "description": "IoT Modular System - signaling/registry server with self-hosted admin panel (3X-UI style). Stores no sensor telemetry.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test:mock": "node test/mock-device.js",
-    "test": "node --test test/registry.test.js test/alerts.test.js test/api.test.js test/limits.test.js"
+    "test": "node --test test/registry.test.js test/registry_update.test.js test/alerts.test.js test/rules.test.js test/api.test.js test/limits.test.js test/session.test.js test/metrics.test.js test/stability.test.js test/settings.test.js test/panel.test.js test/panel_disabled.test.js",
+    "build:panel": "npm --prefix web install && npm --prefix web run build"
   },
   "engines": {
     "node": ">=18"

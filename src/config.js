@@ -45,6 +45,39 @@ const config = {
     },
   },
 
+  panel: {
+    // Web admin panel (3X-UI-like). Enabled when a password is configured.
+    path: envStr('PANEL_PATH', '/panel'),
+    password: envStr('PANEL_PASSWORD', ''),
+    sessionTtlMs: envInt('PANEL_SESSION_TTL_MS', 24 * 3600 * 1000),
+    // Static bundle (Vue built output) shipped in web/dist
+    get staticDir() {
+      return envStr('PANEL_STATIC_DIR', path.join(__dirname, '..', 'web', 'dist'));
+    },
+  },
+
+  metrics: {
+    intervalMs: envInt('METRICS_INTERVAL_MS', 10_000),
+    hours: envInt('METRICS_HOURS', 24),
+    flushSeconds: envInt('METRICS_FLUSH_SECONDS', 120),
+    get file() {
+      return envStr('METRICS_FILE', path.join(__dirname, '..', 'data', 'metrics.json'));
+    },
+  },
+
+  stability: {
+    maxEvents: envInt('STABILITY_MAX_EVENTS', 5000),
+    get file() {
+      return envStr('STABILITY_FILE', path.join(__dirname, '..', 'data', 'stability.json'));
+    },
+  },
+
+  settings: {
+    get file() {
+      return envStr('SETTINGS_FILE', path.join(__dirname, '..', 'data', 'settings.json'));
+    },
+  },
+
   rateLimit: {
     windowMs: envInt('RATE_LIMIT_WINDOW_MS', 60_000),
     register: envInt('RATE_LIMIT_REGISTER', 20),    // /min

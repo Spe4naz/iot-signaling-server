@@ -42,7 +42,18 @@ function isValidIp(ip) {
 }
 
 class DeviceRegistry {
-  constructor() {
+  /**
+   * @param {object} [options]
+   * @param {import('./settings').SettingsStore} [options.settings] runtime overrides
+   *   (stale_ms, max_devices_per_ip). Passed by createServer so the web panel
+   *   settings take effect without a restart.
+   * @param {(device, previousStatus) => void} [options.onStatusChange]
+   *   callback fired whenever a device flips status (online <-> offline).
+   *   previousStatus is null for a brand-new registration.
+   */
+  constructor({ settings = null, onStatusChange = null } = {}) {
+    this.settings = settings;
+    this.onStatusChange = onStatusChange;
     this.devices = new Map();
     this._file = new PersistentFile(
       config.registry.file,
@@ -61,7 +72,15 @@ class DeviceRegistry {
     this.cleanupTimer.unref();
 
     console.log(`[registry] loaded ${this.devices.size} device(s) from ${this._file.filePath}`);
-    console.log(`[registry] stale_offline_ms=${STALE_MS} cleanup_ms=${CLEANUP_INTERVAL_MS}`);
+    console.log(`[registry] stale_offline_ms=${this.staleMs()} cleanup_ms=${CLEANUP_INTERVAL_MS}`);
+  }
+
+  staleMs() {
+    return this.settings ? this.settings.staleMs() : STALE_MS;
+  }
+
+  _emitStatusChange(device, previousStatus) {
+    if (this.onStatusChange) this.onStatusChange(device, previousStatus);
   }
 
   register(data) {
@@ -92,6 +111,7 @@ class DeviceRegistry {
     };
 
     this.devices.set(device.id, device);
+    this._emitStatusChange(device, existing ? (existing.status === 'online' ? 'online' : 'offline') : null);
     this._markDirty();
     return device;
   }
@@ -99,6 +119,7 @@ class DeviceRegistry {
   heartbeat(id, data) {
     const device = this.devices.get(String(id));
     if (!device) return null;
+    const previousStatus = device.status;
     device.lastSeen = Date.now();
     device.status = 'online';
     device.offlineAt = null;
@@ -109,8 +130,50 @@ class DeviceRegistry {
     ) {
       device.firmwareVersion = data.firmwareVersion.trim().slice(0, 32);
     }
+    if (previousStatus !== 'online') this._emitStatusChange(device, previousStatus);
     this._markDirty();
     return device;
+  }
+
+  /**
+   * Edit device metadata (web panel: name/type/ip/port/sensors).
+   * Returns the updated device, null when the device doesn't exist or the
+   * patch is invalid.
+   */
+  update(id, patch) {
+    const device = this.devices.get(String(id));
+    if (!device || !patch || typeof patch !== 'object') return null;
+
+    const next = { ...device };
+    const invalid = (reason) => {
+      const err = new Error(reason);
+      err.code = 'EINVAL';
+      return err;
+    };
+
+    if (patch.name !== undefined) {
+      next.name = String(patch.name).slice(0, MAX_NAME_LEN) || device.id;
+    }
+    if (patch.type !== undefined) {
+      next.type = String(patch.type).slice(0, MAX_TYPE_LEN) || 'esp32';
+    }
+    if (patch.ip !== undefined) {
+      if (!isValidIp(patch.ip)) return invalid('bad_ip');
+      next.ip = patch.ip.slice(0, MAX_IP_LEN);
+    }
+    if (patch.port !== undefined) {
+      const port = Number(patch.port);
+      if (!(port > 0 && port <= 65535)) return invalid('bad_port');
+      next.port = port;
+    }
+    if (patch.sensors !== undefined) {
+      if (!Array.isArray(patch.sensors)) return invalid('bad_sensors');
+      next.sensors = [...new Set(patch.sensors.map((s) => String(s).slice(0, 64)))].slice(0, MAX_SENSORS);
+    }
+
+    this.devices.set(next.id, next);
+    this._markDirty();
+    return next;
   }
 
   list(filter = {}) {
@@ -151,13 +214,15 @@ class DeviceRegistry {
   /** Mark stale devices offline (kept in the registry, NOT deleted). */
   cleanup() {
     const now = Date.now();
+    const staleMs = this.staleMs();
     let changed = false;
     for (const [id, device] of this.devices) {
       if (device.status !== 'online') continue;
-      if (now - device.lastSeen > STALE_MS) {
+      if (now - device.lastSeen > staleMs) {
         device.status = 'offline';
         device.offlineAt = now;
         console.log(`[registry] device offline (stale): ${id} (${device.name})`);
+        this._emitStatusChange(device, 'online');
         changed = true;
       }
     }

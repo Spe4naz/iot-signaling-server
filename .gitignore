@@ -1,8 +1,9 @@
-# runtime data (devices/alerts/rules)
+# runtime data (devices/alerts/rules/metrics/stability/settings)
 data/
 
 # node
 node_modules/
+web/node_modules/
 
 # logs / env / secrets
 *.log
