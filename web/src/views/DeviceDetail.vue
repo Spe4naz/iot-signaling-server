@@ -4,10 +4,10 @@
       <el-button :icon="ArrowLeft" @click="$router.push('/devices')">Устройства</el-button>
       <el-tag
         v-if="detail"
-        :type="detail.device.online ? 'success' : 'danger'"
+        :type="detail.device.status === 'online' ? 'success' : 'danger'"
         effect="dark"
       >
-        {{ detail.device.online ? 'В сети' : 'Оффлайн' }}
+        {{ detail.device.status === 'online' ? 'В сети' : 'Оффлайн' }}
       </el-tag>
     </div>
 
@@ -50,7 +50,7 @@
                 {{ s }}
               </el-tag>
             </div>
-            <div class="hint">последний сигнал: {{ relTime(detail.device.last_seen) }}</div>
+            <div class="hint">последний сигнал: {{ relTime(detail.device.lastSeen) }}</div>
           </div>
         </el-col>
       </el-row>

@@ -94,12 +94,25 @@ test('system and history endpoints return data', async () => {
   assert.ok(sys.json.system);
   assert.equal(typeof sys.json.system.cpu, 'number');
   assert.equal(typeof sys.json.system.mem, 'number');
+  assert.equal(typeof sys.json.cpu_percent, 'number');
+  assert.equal(typeof sys.json.mem_percent, 'number');
+  assert.equal(typeof sys.json.uptime_sec, 'number');
   assert.equal(typeof sys.json.devices.total, 'number');
+  assert.equal(typeof sys.json.alerts.total, 'number');
+  assert.equal(typeof sys.json.alerts.active, 'number');
+  assert.equal(typeof sys.json.rules.total, 'number');
+  assert.equal(typeof sys.json.rules.enabled, 'number');
+  assert.equal(typeof sys.json.metrics_window_hours, 'number');
 
   const hist = await api('GET', `${PANEL}/api/system/history?points=60`, { cookie });
   assert.equal(hist.status, 200);
   assert.ok(Array.isArray(hist.json.perf));
   assert.equal(hist.json.perf.length, hist.json.online.length);
+  assert.ok(Array.isArray(hist.json.timestamps));
+  assert.equal(hist.json.timestamps.length, hist.json.perf.length);
+  assert.ok(Array.isArray(hist.json.metrics.cpu));
+  assert.equal(hist.json.metrics.cpu.length, hist.json.timestamps.length);
+  assert.ok(Array.isArray(hist.json.metrics.online));
 });
 
 test('devices CRUD via panel, with stability journal', async () => {
@@ -228,4 +241,29 @@ test('panel api + session persist across restarts of collectibles', async () => 
   // Ensure settings survived the earlier writes (new SettingsStore reads same file)
   const meta = await api('GET', '/api/v1/meta', { cookie });
   assert.equal(meta.json.stale_ms, 111111);
+});
+
+test('changing the panel password invalidates existing sessions', async () => {
+  const login = await api('POST', `${PANEL}/api/auth/login`, { body: { password: 'panel-secret' } });
+  assert.equal(login.status, 200);
+  const oldCookie = grabCookie(login);
+  assert.ok(oldCookie, 'session cookie issued');
+  assert.equal((await api('GET', `${PANEL}/api/session`, { cookie: oldCookie })).status, 200);
+
+  const put = await api('PUT', `${PANEL}/api/settings`, {
+    cookie,
+    body: { panel_password: 'new-panel-secret' },
+  });
+  assert.equal(put.status, 200);
+
+  // Sessions signed with the previous password must stop verifying.
+  assert.equal((await api('GET', `${PANEL}/api/session`, { cookie: oldCookie })).status, 401);
+  assert.equal((await api('GET', `${PANEL}/api/session`, { cookie })).status, 401);
+
+  const relogin = await api('POST', `${PANEL}/api/auth/login`, {
+    body: { password: 'new-panel-secret' },
+  });
+  assert.equal(relogin.status, 200);
+  cookie = grabCookie(relogin);
+  assert.equal((await api('GET', `${PANEL}/api/session`, { cookie })).status, 200);
 });

@@ -33,9 +33,9 @@
       </el-table-column>
       <el-table-column label="Статус" width="120">
         <template #default="{ row }">
-          <span class="pill" :class="row.online ? 'dot-online' : 'dot-offline'">
+          <span class="pill" :class="row.status === 'online' ? 'dot-online' : 'dot-offline'">
             <span class="dot" />
-            {{ row.online ? 'В сети' : 'Оффлайн' }}
+            {{ row.status === 'online' ? 'В сети' : 'Оффлайн' }}
           </span>
         </template>
       </el-table-column>
@@ -57,7 +57,7 @@
         </template>
       </el-table-column>
       <el-table-column label="Последний раз" width="150">
-        <template #default="{ row }">{{ relTime(row.last_seen) }}</template>
+        <template #default="{ row }">{{ relTime(row.lastSeen) }}</template>
       </el-table-column>
       <el-table-column label="Действия" width="120" fixed="right">
         <template #default="{ row }">
@@ -197,6 +197,7 @@ async function save() {
     port: f.port,
     sensors: parseSensors(f.sensorsText),
   };
+  if (!dlg.isEdit) body.id = f.id;
   try {
     if (dlg.isEdit) {
       await api.updateDevice(f.id, body);

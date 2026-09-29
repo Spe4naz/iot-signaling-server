@@ -1,6 +1,8 @@
 export function relTime(ts) {
-  if (!ts) return '—';
-  const s = Math.floor((Date.now() - ts) / 1000);
+  if (ts === null || ts === undefined || ts === '') return '—';
+  const at = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  if (!Number.isFinite(at)) return '—';
+  const s = Math.floor((Date.now() - at) / 1000);
   if (s < 0) return 'только что';
   if (s < 60) return `${s} сек назад`;
   const m = Math.floor(s / 60);

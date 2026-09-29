@@ -155,7 +155,8 @@ function createServer() {
 
   /* ---------- auth ---------- */
 
-  const panelRequest = (req) => session.sessionFromReq(req) > 0;
+  const panelKey = () => settings.panelPassword();
+  const panelRequest = (req) => session.sessionFromReq(req, panelKey()) > 0;
 
   /** Devices-level auth: Bearer token, or open when no token is configured. */
   function apiTokenOk(req) {
@@ -409,7 +410,7 @@ function createServer() {
     }
 
     const secure = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
-    session.setCookie(res, Date.now() + settings.sessionTtlMs(), { secure });
+    session.setCookie(res, Date.now() + settings.sessionTtlMs(), { secure, keyMaterial: panelKey() });
     sendJson(res, 200, { ok: true });
   }
 
@@ -433,11 +434,17 @@ function createServer() {
   function handlePanelSystem(req, res) {
     metrics.sample(stats); // refresh the latest bucket on demand
     const s = metrics.last();
+    const alerts = alertStore.list();
+    const rules = ruleStore.list();
+    const uptimeSec = process.uptime();
     sendJson(res, 200, {
       ok: true,
       version: VERSION,
-      uptime: process.uptime(),
       node: process.version,
+      uptime: uptimeSec,
+      uptime_sec: uptimeSec,
+      cpu_percent: s ? s.cpu : null,
+      mem_percent: s ? s.mem : null,
       system: s
         ? {
             t: s.t,
@@ -451,13 +458,33 @@ function createServer() {
           }
         : null,
       devices: registry.stats(),
+      alerts: { total: alerts.length, active: alerts.filter((a) => a.is_active).length },
+      rules: { total: rules.length, enabled: rules.filter((r) => r.enabled).length },
+      metrics_window_hours: settings.metricsHours(),
       panel: { path: PANEL_PATH, enabled: panelEnabled() },
     });
   }
 
   function handlePanelHistory(req, res) {
     const { params } = parseUrl(req);
-    sendJson(res, 200, metrics.history(Number(params.get('points')) || 120));
+    const data = metrics.history(Number(params.get('points')) || 120);
+    const timestamps = data.perf.map((p) => p.t);
+    const metricsView = {
+      cpu: data.perf.map((p) => p.cpu),
+      mem: data.perf.map((p) => p.mem),
+      load: data.perf.map((p) => p.load1),
+      net_rx_kb_s: data.perf.map((p) => p.net_rx_kb_s),
+      net_tx_kb_s: data.perf.map((p) => p.net_tx_kb_s),
+      req_min: data.perf.map((p) => p.req_min),
+      avg_ms: data.perf.map((p) => p.avg_ms),
+      online: data.online.map((p) => p.online),
+    };
+    sendJson(res, 200, {
+      timestamps,
+      metrics: metricsView,
+      perf: data.perf,
+      online: data.online,
+    });
   }
 
   function enrichDevice(d) {

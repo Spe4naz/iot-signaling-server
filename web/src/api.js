@@ -39,6 +39,7 @@ export const api = {
   // panel session
   login: (password) => request('/panel/api/auth/login', { method: 'POST', body: { password } }),
   logout: () => request('/panel/api/auth/logout', { method: 'POST' }),
+  session: () => request('/panel/api/session'),
 
   // system
   system: () => request('/panel/api/system'),
