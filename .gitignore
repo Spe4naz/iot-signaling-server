@@ -1,0 +1,19 @@
+# runtime data (devices/alerts/rules)
+data/
+
+# node
+node_modules/
+
+# logs / env / secrets
+*.log
+npm-debug.log*
+.env
+*.pem
+*.key
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/

@@ -3,23 +3,23 @@
 const http = require('http');
 const { DeviceRegistry } = require('./registry');
 const { AlertStore } = require('./alerts');
+const { RuleStore } = require('./rules');
+const config = require('./config');
 
-const VERSION = require('../package.json').version;
-const API = '/api/v1';
+const VERSION = config.version;
+const API = config.apiPrefix;
 
-// Optional write token — when set, register/delete/alerts writes require:
-//   Authorization: Bearer <token>
-const REGISTER_TOKEN = process.env.REGISTER_TOKEN || '';
+const REGISTER_TOKEN = config.auth.registerToken;
 
 // In-memory rate limiting (per IP, sliding window)
-const RATE_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60_000;
-const RATE_REGISTER = Number(process.env.RATE_LIMIT_REGISTER) || 20;   // /min
-const RATE_HEARTBEAT = Number(process.env.RATE_LIMIT_HEARTBEAT) || 120; // /min
-const RATE_WRITE = Number(process.env.RATE_LIMIT_WRITE) || 60;          // /min
-const RATE_READ = Number(process.env.RATE_LIMIT_READ) || 120;           // /min
+const RATE_WINDOW_MS = config.rateLimit.windowMs;
+const RATE_REGISTER = config.rateLimit.register;
+const RATE_HEARTBEAT = config.rateLimit.heartbeat;
+const RATE_WRITE = config.rateLimit.write;
+const RATE_READ = config.rateLimit.read;
 
 // Anti-spam: max devices from a single origin IP
-const MAX_DEVICES_PER_IP = Number(process.env.MAX_DEVICES_PER_IP) || 20;
+const MAX_DEVICES_PER_IP = config.registry.maxDevicesPerIp;
 
 /* ---------- helpers ---------- */
 
@@ -89,6 +89,7 @@ function clientIp(req) {
 function createServer() {
   const registry = new DeviceRegistry();
   const alertStore = new AlertStore();
+  const ruleStore = new RuleStore();
 
   /* ---------- rate limiting ---------- */
 
@@ -222,6 +223,7 @@ function createServer() {
     const removed = registry.remove(id);
     if (!removed) return sendJson(res, 404, { error: 'not_found' });
     alertStore.removeByDevice(id);
+    ruleStore.removeByDevice(id);
     sendJson(res, 200, { ok: true });
   }
 
@@ -281,6 +283,62 @@ function createServer() {
     sendJson(res, 200, { ok: true });
   }
 
+  /* ---------- smart-home rule handlers ---------- */
+
+  async function handleRulesList(req, res) {
+    const { params } = parseUrl(req);
+    sendJson(res, 200, ruleStore.list({ deviceId: params.get('device_id') }));
+  }
+
+  async function handleRuleCreate(req, res) {
+    if (!authOk(req)) return sendJson(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'write:' + clientIp(req), RATE_WRITE)) {
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
+
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return sendJson(res, 400, { error: 'invalid_json' });
+    }
+
+    const rule = ruleStore.create(body);
+    if (!rule) return sendJson(res, 400, { error: 'invalid_rule' });
+    sendJson(res, 200, rule);
+  }
+
+  async function handleRuleUpdate(req, res, id) {
+    if (!authOk(req)) return sendJson(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'write:' + clientIp(req), RATE_WRITE)) {
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
+
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return sendJson(res, 400, { error: 'invalid_json' });
+    }
+
+    const rule = ruleStore.update(id, body);
+    if (!rule) {
+      const exists = ruleStore.get(id);
+      return sendJson(res, exists ? 400 : 404, { error: exists ? 'invalid_rule' : 'not_found' });
+    }
+    sendJson(res, 200, rule);
+  }
+
+  function handleRuleDelete(req, res, id) {
+    if (!authOk(req)) return sendJson(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'write:' + clientIp(req), RATE_WRITE)) {
+      return sendJson(res, 429, { error: 'rate_limited' });
+    }
+
+    if (!ruleStore.remove(id)) return sendJson(res, 404, { error: 'not_found' });
+    sendJson(res, 200, { ok: true });
+  }
+
   /* ---------- router ---------- */
 
   const server = http.createServer((req, res) => {
@@ -323,15 +381,16 @@ function createServer() {
         uptime: process.uptime(),
         devices: { total, online, offline },
         alerts: alertStore.list().length,
+        rules: ruleStore.list().length,
       });
     }
 
     if (req.method === 'GET' && path === API + '/meta') {
       return sendJson(res, 200, {
         version: VERSION,
-        stale_ms: Number(process.env.STALE_MS) || 180_000,
+        stale_ms: config.registry.staleMs,
         rate_limits: { window_ms: RATE_WINDOW_MS, register: RATE_REGISTER, heartbeat: RATE_HEARTBEAT, write: RATE_WRITE, read: RATE_READ },
-        auth_enabled: Boolean(REGISTER_TOKEN),
+        auth_enabled: config.auth.enabled,
         max_devices_per_ip: MAX_DEVICES_PER_IP,
       });
     }
@@ -368,6 +427,26 @@ function createServer() {
       if (req.method === 'DELETE') return handleAlertDelete(req, res, id);
     }
 
+    // Smart-home rules collection
+    if (path === API + '/rules') {
+      if (req.method === 'GET') return handleRulesList(req, res);
+      if (req.method === 'POST') return handleRuleCreate(req, res);
+    }
+
+    // /api/v1/rules/:id
+    const ruleMatch = path.match(new RegExp('^' + API + '/rules/([^/]+)$'));
+    if (ruleMatch) {
+      let id;
+      try {
+        id = decodeURIComponent(ruleMatch[1]);
+      } catch {
+        sendJson(res, 400, { error: 'bad_rule_id' });
+        return;
+      }
+      if (req.method === 'PUT') return handleRuleUpdate(req, res, id);
+      if (req.method === 'DELETE') return handleRuleDelete(req, res, id);
+    }
+
     // /api/v1/devices/:id
     const deviceMatch = path.match(new RegExp('^' + API + '/devices/([^/]+)$'));
     if (deviceMatch) {
@@ -385,7 +464,7 @@ function createServer() {
     sendJson(res, 404, { error: 'not_found' });
   }
 
-  return { server, registry, alertStore };
+  return { server, registry, alertStore, ruleStore };
 }
 
 module.exports = { createServer };

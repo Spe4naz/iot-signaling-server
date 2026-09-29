@@ -1,7 +1,7 @@
 'use strict';
 
-const path = require('path');
 const { PersistentFile } = require('./persist');
+const config = require('./config');
 
 /**
  * DeviceRegistry — registry of IoT devices with persistent storage.
@@ -11,10 +11,10 @@ const { PersistentFile } = require('./persist');
  * Devices that stop heartbeating are kept but marked `status:'offline'`.
  */
 
-const STALE_MS = Number(process.env.STALE_MS) || 180_000; // 3 min without heartbeat -> offline
-const CLEANUP_INTERVAL_MS = Number(process.env.CLEANUP_INTERVAL_MS) || 30_000;
+const STALE_MS = config.registry.staleMs; // without heartbeat -> offline
+const CLEANUP_INTERVAL_MS = config.registry.cleanupIntervalMs;
 const SAVE_DEBOUNCE_MS = 3_000;
-const DEFAULT_FILE = path.join(__dirname, '..', 'data', 'devices.json');
+const DEFAULT_FILE = config.registry.file;
 
 const IP_RE = /^\[?([0-9a-fA-F.:]+)\]?$/;
 const MAX_ID_LEN = 64;
@@ -45,7 +45,7 @@ class DeviceRegistry {
   constructor() {
     this.devices = new Map();
     this._file = new PersistentFile(
-      process.env.REGISTRY_FILE || DEFAULT_FILE,
+      config.registry.file,
       [],
     );
     this._saveTimer = null;

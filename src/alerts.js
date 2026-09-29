@@ -1,8 +1,8 @@
 'use strict';
 
-const path = require('path');
 const crypto = require('crypto');
 const { PersistentFile } = require('./persist');
+const config = require('./config');
 
 /**
  * AlertStore — CRUD + persistent storage for device alerts.
@@ -12,7 +12,7 @@ const { PersistentFile } = require('./persist');
  */
 
 const ALERT_TYPES = ['above', 'below', 'equals'];
-const DEFAULT_FILE = path.join(__dirname, '..', 'data', 'alerts.json');
+const DEFAULT_FILE = config.alerts.file;
 
 function normalizeAlert(data, nowISO) {
   if (!data || typeof data !== 'object') return null;
@@ -41,7 +41,7 @@ function normalizeAlert(data, nowISO) {
 class AlertStore {
   constructor() {
     this._file = new PersistentFile(
-      process.env.ALERTS_FILE || DEFAULT_FILE,
+      config.alerts.file,
       [],
     );
     const saved = this._file.load();
